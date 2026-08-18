@@ -4,31 +4,179 @@ const codeContent = document.querySelector('#code-content');
 const toggleCode = document.querySelector('#toggle-code');
 const copyCode = document.querySelector('#copy-code');
 const notice = document.querySelector('#copy-notice');
+const navToggle = document.querySelector('#nav-toggle') || document.querySelector('.nav-toggle');
+const siteNav = document.querySelector('#site-nav') || document.querySelector('header nav');
+const btnVolverArriba = document.querySelector('#btn-volver-arriba');
 
 codeContent.textContent = sourceCode;
 
-toggleCode.addEventListener('click', () => {
-  const hidden = codePanel.hidden;
-  codePanel.hidden = !hidden;
-  toggleCode.textContent = hidden ? 'Ocultar código' : 'Ver código';
-  if (hidden) codePanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-});
-
-copyCode.addEventListener('click', async () => {
-  try {
-    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(sourceCode);
-    else {
-      const area = document.createElement('textarea');
-      area.value = sourceCode; document.body.appendChild(area); area.select();
-      document.execCommand('copy'); area.remove();
+// Visibilidad del visor de código
+if (toggleCode && codePanel) {
+  toggleCode.addEventListener('click', () => {
+    const hidden = codePanel.hidden;
+    codePanel.hidden = !hidden;
+    toggleCode.textContent = hidden ? 'Ocultar código' : 'Ver código';
+    toggleCode.setAttribute('aria-expanded', String(hidden));
+    if (hidden) {
+      codePanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-    notice.textContent = '✓ Código copiado correctamente.';
-  } catch {
-    notice.textContent = 'No se pudo copiar automáticamente. Selecciona el código manualmente.';
+  });
+}
+
+// Lógica de copia con feedback interactivo de 2.5 segundos
+let copyTimeoutId = null;
+
+async function executeCopy() {
+  let success = false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(sourceCode);
+      success = true;
+    } else {
+      const area = document.createElement('textarea');
+      area.value = sourceCode;
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      success = document.execCommand('copy');
+      area.remove();
+    }
+  } catch (err) {
+    console.error('Error al copiar:', err);
+    success = false;
   }
-  setTimeout(() => notice.textContent = '', 3500);
-});
 
-document.querySelector('.nav-toggle').addEventListener('click', () => document.querySelector('header nav').classList.toggle('open'));
+  if (copyTimeoutId) clearTimeout(copyTimeoutId);
 
-document.querySelector('#guia .guide-list small').innerHTML = 'Inicia sesión en <a href="https://code.earthengine.google.com/" target="_blank" rel="noreferrer">code.earthengine.google.com ↗</a> con tu cuenta de Google habilitada para Earth Engine.';
+  if (success) {
+    if (copyCode) {
+      copyCode.textContent = '¡Código copiado! ✓';
+      copyCode.classList.add('copied');
+    }
+    if (notice) {
+      notice.textContent = '✓ Código copiado al portapapeles listo para Google Earth Engine.';
+      notice.classList.add('active');
+    }
+
+    copyTimeoutId = setTimeout(() => {
+      if (copyCode) {
+        copyCode.textContent = '📋 Copiar código';
+        copyCode.classList.remove('copied');
+      }
+      if (notice) {
+        notice.textContent = '';
+        notice.classList.remove('active');
+      }
+    }, 2500);
+  } else {
+    if (notice) {
+      notice.textContent = 'No se pudo copiar automáticamente. Por favor presiona "Ver código" y cópialo manualmente.';
+      notice.classList.add('error');
+    }
+    setTimeout(() => {
+      if (notice) {
+        notice.textContent = '';
+        notice.classList.remove('error');
+      }
+    }, 4000);
+  }
+}
+
+if (copyCode) {
+  copyCode.addEventListener('click', executeCopy);
+}
+
+// Botón de navegación móvil (hamburguesa)
+if (navToggle && siteNav) {
+  navToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    siteNav.classList.toggle('open');
+  });
+
+  // Cerrar menú móvil al hacer clic en un enlace
+  siteNav.querySelectorAll('a').forEach(link => {
+    link.addEventListener('click', () => {
+      siteNav.classList.remove('open');
+    });
+  });
+
+  // Cerrar menú móvil si se hace clic fuera
+  document.addEventListener('click', (e) => {
+    if (!siteNav.contains(e.target) && !navToggle.contains(e.target)) {
+      siteNav.classList.remove('open');
+    }
+  });
+}
+
+// Botón flotante para volver arriba y barra de progreso de scroll
+const headerProgressBar = document.querySelector('#header-progress-bar');
+const navLinks = document.querySelectorAll('#site-nav a[href^="#"]');
+const trackedSections = document.querySelectorAll('main > section[id], #inicio');
+
+function updateScrollState() {
+  const scrollTop = window.scrollY || document.documentElement.scrollTop;
+  const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+  
+  // 1. Barra de progreso
+  if (headerProgressBar) {
+    const progressPercent = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+    headerProgressBar.style.width = `${Math.min(100, Math.max(0, progressPercent))}%`;
+  }
+
+  // 2. Botón volver arriba
+  if (btnVolverArriba) {
+    if (scrollTop > 300) {
+      btnVolverArriba.classList.add('visible');
+    } else {
+      btnVolverArriba.classList.remove('visible');
+    }
+  }
+
+  // 3. Indicador de sección activa en la barra de navegación
+  let currentSectionId = '';
+  const offsetHeader = 100;
+  
+  trackedSections.forEach(section => {
+    const sectionTop = section.offsetTop - offsetHeader;
+    const sectionHeight = section.offsetHeight;
+    if (scrollTop >= sectionTop && scrollTop < sectionTop + sectionHeight) {
+      currentSectionId = section.getAttribute('id');
+    }
+  });
+
+  // Si estamos muy cerca del fondo, activar la última sección
+  if (docHeight > 0 && (scrollTop + window.innerHeight) >= (document.documentElement.scrollHeight - 60)) {
+    const lastSection = trackedSections[trackedSections.length - 1];
+    if (lastSection) currentSectionId = lastSection.getAttribute('id');
+  }
+
+  if (currentSectionId) {
+    navLinks.forEach(link => {
+      const href = link.getAttribute('href');
+      if (href === `#${currentSectionId}`) {
+        link.classList.add('active');
+      } else {
+        link.classList.remove('active');
+      }
+    });
+  }
+}
+
+window.addEventListener('scroll', updateScrollState, { passive: true });
+window.addEventListener('resize', updateScrollState, { passive: true });
+updateScrollState();
+
+if (btnVolverArriba) {
+  btnVolverArriba.addEventListener('click', () => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  });
+}
+
+const guiaSmall = document.querySelector('#guia .guide-list small');
+if (guiaSmall) {
+  guiaSmall.innerHTML = 'Inicia sesión en <a href="https://code.earthengine.google.com/" target="_blank" rel="noreferrer">code.earthengine.google.com ↗</a> con tu cuenta de Google habilitada para Earth Engine.';
+}
